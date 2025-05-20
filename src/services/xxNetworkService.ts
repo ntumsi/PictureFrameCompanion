@@ -126,11 +126,11 @@ import axios, { isAxiosError } from 'axios';
 
       // Define common IP patterns for home networks
       const commonPatterns = [
-        { subnet: '192.168.1', range: [1, 20] },
-        { subnet: '192.168.0', range: [1, 20] },
+        { subnet: '192.168.1', range: [1, 100] },
+        { subnet: '192.168.0', range: [1, 100] },
         { subnet: '10.0.0', range: [1, 20] },
         { subnet: '10.0.1', range: [1, 20] },
-        { subnet: '172.16.0', range: [1, 20] }
+        { subnet: '172.16.0', range: [1, 100] }
       ];
 
       // Common ports for PictureFrame
@@ -153,7 +153,7 @@ import axios, { isAxiosError } from 'axios';
             console.log('Current subnet:', subnet);
 
             // Add the current subnet as the first to check
-            commonPatterns.unshift({ subnet, range: [1, 20] });
+            commonPatterns.unshift({ subnet, range: [1, 100] });
           }
         } catch (netInfoError: unknown) {
           // NetInfo may not be available, continue with standard patterns

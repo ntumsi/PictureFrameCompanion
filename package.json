@@ -33,7 +33,9 @@
     "expo-image-manipulator": "^13.1.7",
     "expo-image-picker": "^16.1.4",
     "expo-linking": "~7.1.5",
+    "expo-location": "^18.1.5",
     "expo-media-library": "^17.1.6",
+    "expo-permissions": "^14.4.0",
     "expo-router": "~5.0.6",
     "expo-secure-store": "^14.2.3",
     "expo-splash-screen": "~0.30.8",
@@ -50,6 +52,7 @@
     "react-native-screens": "~4.10.0",
     "react-native-web": "~0.20.0",
     "react-native-webview": "13.13.5",
+    "react-native-zeroconf": "^0.13.8",
     "react-redux": "^9.2.0",
     "slider": "^1.0.4"
   },
