@@ -10,6 +10,7 @@ module.exports = {
   newArchEnabled: true,
   ios: {
     supportsTablet: true,
+    bundleIdentifier: "com.ntumsi.pictureframecompanion",
     infoPlist: {
       NSCameraUsageDescription: "This app uses the camera to take photos for your picture frame.",
       NSPhotoLibraryUsageDescription: "This app accesses your photos to send them to your picture frame.",
