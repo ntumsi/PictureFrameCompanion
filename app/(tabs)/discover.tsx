@@ -221,15 +221,40 @@ import React, { useState, useEffect } from 'react';
       async function requestPermissions() {
         if (Platform.OS === 'android') {
           // Request location permission which is needed for network discovery
-          // Use the newer expo-location instead of deprecated expo-permissions
-          const { status } = await Location.requestForegroundPermissionsAsync();
+          const { status } = await Location.getForegroundPermissionsAsync();
+          
           if (status !== 'granted') {
-            setError('Network scanning requires location permission');
+            console.log('Location permission not granted, requesting...');
+            const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+            
+            if (newStatus !== 'granted') {
+              setError('Location permission is required for network scanning on Android. Please enable it in settings.');
+            } else {
+              console.log('Location permission granted');
+            }
           }
         }
       }
 
       requestPermissions();
+      
+      // Also check network connection status
+      async function checkNetworkStatus() {
+        try {
+          const status = await NetworkService.checkNetworkStatus();
+          if (status) {
+            if (!status.isWifi) {
+              setError('Please connect to WiFi to find your Picture Frame');
+            } else if (status.locationPermission === 'denied' && Platform.OS === 'android') {
+              setError('Location permission is required for network scanning on Android');
+            }
+          }
+        } catch (err) {
+          console.log('Error checking network status:', err);
+        }
+      }
+      
+      checkNetworkStatus();
     }, []);
 
     // Try manual connection
@@ -262,17 +287,64 @@ import React, { useState, useEffect } from 'react';
 
     // Scan for servers
     const scanNetwork = async () => {
+      // Clear previous state
       setIsScanning(true);
       setError('');
       setFoundServers([]);
 
+      // Check permissions first - permission check happens inside scanNetwork
+      // but we're double-checking here for better user experience
+      if (Platform.OS === 'android') {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          try {
+            const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+            if (newStatus !== 'granted') {
+              setIsScanning(false);
+              setError('Location permission is required for network scanning on Android. Please enable it in settings.');
+              return;
+            }
+          } catch (err) {
+            console.log('Error requesting location permission:', err);
+          }
+        }
+      }
+      
+      // Check network connectivity
+      const networkStatus = await NetworkService.checkNetworkStatus();
+      
+      // Only enforce WiFi check in production (not development)
+      if (networkStatus && !networkStatus.isWifi && !__DEV__) {
+        setIsScanning(false);
+        setError('Please connect to WiFi to find your Picture Frame');
+        return;
+      }
+      
+      // Check if we're in a web environment (development)
+      if (Platform.OS === 'web') {
+        console.log('Web environment detected, network scanning may be limited');
+        // Add a special note for development/web mode
+        setError('Note: Network scanning is limited in web/development mode. Use manual connection instead.');
+      }
+
       try {
-        const result = await NetworkService.scanNetwork();
+        // Use progress callback to update UI
+        const result = await NetworkService.scanNetwork({
+          onProgress: (progress) => {
+            if (progress.found.length > 0 && foundServers.length === 0) {
+              setFoundServers(progress.found);
+            }
+          }
+        });
 
         if (result.success && result.servers) {
           setFoundServers(result.servers);
         } else {
-          setError(`Scan failed: ${result.reason}`);
+          if (result.permissionDenied) {
+            setError('Cannot scan network: Location permission required');
+          } else {
+            setError(`Scan failed: ${result.reason || 'No servers found'}`);
+          }
         }
       } catch (err) {
         setError(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);

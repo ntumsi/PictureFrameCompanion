@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-  import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from
+  import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Platform } from
   'react-native';
   import { Stack } from 'expo-router';
   import { useTheme } from '../../src/context/ThemeContext';
   import axios, { isAxiosError } from 'axios';
+  import NetworkService from '../../src/services/NetworkService';
 
   export default function NetworkDebugScreen() {
     const { isDark } = useTheme();
@@ -32,10 +33,22 @@ import React, { useState } from 'react';
         const timeoutId = setTimeout(() => controller.abort(), timeout);
 
         try {
+          // Add a check for localhost or development mode
+          if (testIP === 'localhost' || testIP.startsWith('127.0.0.1')) {
+            addLog('WARNING: Testing localhost connections may have CORS issues in development mode');
+            addLog('This is normal and won\'t affect real device connections');
+          }
+          
+          // Set specific headers to help with potential CORS issues
           const response = await
-  axios.get(`http://${testIP}:${parseInt(testPort)}/api/images`, {
+  axios.get(`http://${testIP}:${parseInt(testPort) || 5000}/api/images`, {
             timeout,
             signal: controller.signal,
+            headers: {
+              'Accept': 'application/json, text/plain, */*',
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache'
+            }
           });
 
           clearTimeout(timeoutId);
@@ -84,6 +97,30 @@ import React, { useState } from 'react';
       try {
         addLog('Getting network information...');
 
+        // Check Android permissions
+        if (Platform.OS === 'android') {
+          try {
+            const Location = await import('expo-location');
+            const { status } = await Location.getForegroundPermissionsAsync();
+            addLog(`Location permission status: ${status}`);
+            
+            if (status !== 'granted') {
+              addLog('WARNING: Location permission not granted');
+              addLog('This is required for network scanning on Android');
+              
+              // Try to request permission
+              const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+              addLog(`Location permission request result: ${newStatus}`);
+            }
+          } catch (locError: unknown) {
+            const errorMessage = locError instanceof Error
+              ? locError.message
+              : 'Unknown error';
+            addLog(`Error checking location permission: ${errorMessage}`);
+          }
+        }
+
+        // Use directly imported NetInfo instead of dynamic import
         try {
           const NetInfo = await import('@react-native-community/netinfo');
           const netInfo = await NetInfo.default.fetch();
@@ -100,12 +137,32 @@ import React, { useState } from 'react';
               setTestIP(netInfo.details.ipAddress.split('.').slice(0, 3).join('.') + '.1');
             }
           }
-        } catch (importError: unknown) {
-          const errorMessage = importError instanceof Error
-            ? importError.message
+        } catch (netError: unknown) {
+          const errorMessage = netError instanceof Error
+            ? netError.message
             : 'Unknown error';
-          addLog(`Error importing NetInfo: ${errorMessage}`);
-          addLog('NetInfo might not be installed. Try: npm install@react-native-community/netinfo');
+          addLog(`Error getting NetInfo: ${errorMessage}`);
+        }
+
+        // Use NetworkService to get detailed network status
+        try {
+          const networkStatus = await NetworkService.checkNetworkStatus();
+          if (networkStatus) {
+            addLog('--- Network Service Status ---');
+            addLog(`Connected: ${networkStatus.isConnected}`);
+            addLog(`WiFi: ${networkStatus.isWifi}`);
+            addLog(`IP: ${networkStatus.ipAddress || 'Unknown'}`);
+            addLog(`WiFi Name: ${networkStatus.wifiName || 'Unknown'}`);
+            addLog(`Internet Access: ${networkStatus.internetAccess}`);
+            addLog(`Location Permission: ${networkStatus.locationPermission}`);
+          } else {
+            addLog('Failed to get network status from NetworkService');
+          }
+        } catch (nsError: unknown) {
+          const errorMessage = nsError instanceof Error
+            ? nsError.message
+            : 'Unknown error';
+          addLog(`Error getting network service status: ${errorMessage}`);
         }
 
         addLog('Network info retrieval complete');

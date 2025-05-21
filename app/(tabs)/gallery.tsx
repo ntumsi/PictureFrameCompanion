@@ -333,15 +333,33 @@
 
     useEffect(() => {
       // Check connection status
-      if (!NetworkService.connectedServer) {
-        Alert.alert(
-          "Not Connected",
-          "You need to connect to a PictureFrame server first.",
-          [{ text: "Go to Discovery", onPress: () => router.navigate('/(tabs)/discover') }]
-        );
-      } else {
-        loadImages();
+      async function checkConnectionAndLoadImages() {
+        try {
+          // Force reload saved connection to ensure it's up to date
+          await NetworkService.loadSavedConnection();
+          
+          if (!NetworkService.connectedServer) {
+            console.log('Gallery - No connection available');
+            Alert.alert(
+              "Not Connected",
+              "You need to connect to a PictureFrame server first.",
+              [{ text: "Go to Discovery", onPress: () => router.navigate('/(tabs)/discover') }]
+            );
+          } else {
+            console.log('Gallery - Connection available, loading images');
+            loadImages();
+          }
+        } catch (error) {
+          console.error('Error checking connection:', error);
+          Alert.alert(
+            "Connection Error",
+            "There was a problem checking your connection status.",
+            [{ text: "Go to Discovery", onPress: () => router.navigate('/(tabs)/discover') }]
+          );
+        }
       }
+      
+      checkConnectionAndLoadImages();
     }, [router]);
 
     // Load images from server

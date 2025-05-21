@@ -122,12 +122,29 @@
   null>(NetworkService.connectedServer);
 
     useEffect(() => {
-      // Check if we already have connection info
-      const server = NetworkService.connectedServer;
-      if (server) {
-        setIsConnected(true);
-        setServerInfo(server);
+      // Check if we already have connection info and set up state
+      async function checkConnection() {
+        try {
+          // Force reload the saved connection
+          await NetworkService.loadSavedConnection();
+          
+          const server = NetworkService.connectedServer;
+          console.log('Home screen - Current connection state:', server);
+          
+          if (server) {
+            setIsConnected(true);
+            setServerInfo(server);
+          } else {
+            setIsConnected(false);
+            setServerInfo(null);
+          }
+        } catch (error) {
+          console.error('Error checking connection:', error);
+          setIsConnected(false);
+        }
       }
+      
+      checkConnection();
     }, []);
 
     return (

@@ -337,19 +337,13 @@
 //   export default new NetworkService();
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import NetInfo from '@react-native-community/netinfo';
+import Zeroconf from 'react-native-zeroconf';
+import * as Location from 'expo-location';
+import { Platform } from 'react-native';
 
 // Key for storing connection info
 const CONNECTION_KEY = 'pictureframe_connection';
-
-// Add optional Zeroconf import for mDNS discovery
-// This needs to be added to your project: npm install react-native-zeroconf
-let Zeroconf = null;
-try {
-  // Dynamic import to avoid requiring the dependency if not installed
-  Zeroconf = require('react-native-zeroconf').default;
-} catch (_e) {
-  console.log('Zeroconf not available, mDNS discovery will be disabled');
-}
 
 class NetworkService {
   // Store the connection info when found
@@ -362,18 +356,64 @@ class NetworkService {
   constructor() {
     // Load saved connection when service is initialized
     this.loadSavedConnection();
+    
+    // Log the construction
+    console.log('NetworkService initialized - constructor called');
   }
 
   // Load saved connection from secure storage
   async loadSavedConnection() {
     try {
+      console.log('Loading saved connection from SecureStore');
       const savedConnection = await SecureStore.getItemAsync(CONNECTION_KEY);
+      
       if (savedConnection) {
-        this.connectedServer = JSON.parse(savedConnection);
-        console.log('Loaded saved connection:', this.connectedServer);
+        try {
+          this.connectedServer = JSON.parse(savedConnection);
+          console.log('Loaded saved connection:', this.connectedServer);
+          
+          // Verify the connection still works
+          if (this.connectedServer && this.connectedServer.ip && this.connectedServer.port) {
+            console.log('Verifying saved connection still works...');
+            // Don't wait for verification - do it in background
+            this.verifyConnection(this.connectedServer.ip, this.connectedServer.port)
+              .then(isValid => {
+                if (!isValid) {
+                  console.log('Saved connection is no longer valid');
+                  // Don't clear connection here, as it might be temporary - 
+                  // just log the issue
+                }
+              })
+              .catch(err => {
+                console.log('Error verifying connection:', err);
+              });
+          }
+        } catch (parseError) {
+          console.error('Error parsing saved connection:', parseError);
+          // Clear invalid saved connection
+          await SecureStore.deleteItemAsync(CONNECTION_KEY);
+          this.connectedServer = null;
+        }
+      } else {
+        console.log('No saved connection found');
+        this.connectedServer = null;
       }
     } catch (error) {
-      console.error('Failed to load saved connection:', error);
+      console.error('Failed to load saved connection:', 
+        error instanceof Error ? error.message : 'Unknown error');
+      this.connectedServer = null;
+    }
+  }
+  
+  // Verify a connection is still valid
+  async verifyConnection(ip, port) {
+    try {
+      const result = await this.checkServer(ip, port, 5000);
+      return result.success;
+    } catch (error) {
+      console.log('Error verifying connection:', 
+        error instanceof Error ? error.message : 'Unknown error');
+      return false;
     }
   }
 
@@ -476,9 +516,53 @@ class NetworkService {
       useZeroconf = true,        // Whether to use mDNS/Bonjour discovery
       onProgress = null,         // Callback for scan progress updates
       scanCurrentNetworkOnly = true, // Only scan the network we're connected to
+      skipPermissionCheck = false,   // Skip permission check (not recommended)
     } = options;
     
     console.log('Starting network scan with options:', options);
+    
+    // Check if we're in development mode or on web platform
+    const isDev = __DEV__ || Platform.OS === 'web';
+    if (isDev) {
+      console.log('Development mode detected, some network scanning features may be limited');
+      
+      // If we're in web environment, scanning will be very limited
+      if (Platform.OS === 'web') {
+        console.log('Web environment has limited scanning capabilities due to CORS restrictions');
+        // In web environment, we'll return minimal scanning ability
+        return {
+          success: false,
+          reason: 'Limited scanning capabilities in web environment. Please use manual connection.',
+          isDevelopment: true,
+          isWeb: true
+        };
+      }
+    }
+    
+    // Check for permissions first (required for Android)
+    if (Platform.OS === 'android' && !skipPermissionCheck) {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          console.log('WARNING: Location permission not granted - network scan may fail');
+          // Try to request the permission
+          const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+          if (newStatus !== 'granted') {
+            console.log('Location permission denied - cannot scan network properly');
+            return { 
+              success: false, 
+              reason: 'Location permission required for network scanning on Android', 
+              permissionDenied: true
+            };
+          }
+        }
+      } catch (error) {
+        console.log('Error checking location permission:', 
+          error instanceof Error ? error.message : 'Unknown error');
+        // Continue anyway, but logging the error
+      }
+    }
+    
     this.isScanning = true;
     this.scanAbortController = new AbortController();
     const signal = this.scanAbortController.signal;
@@ -499,8 +583,8 @@ class NetworkService {
       }
     };
 
-    // Try Zeroconf/mDNS discovery first if enabled and available
-    if (useZeroconf && Zeroconf) {
+    // Try Zeroconf/mDNS discovery first if enabled
+    if (useZeroconf) {
       try {
         console.log('Attempting Zeroconf discovery...');
         updateProgress(0, 1, []);
@@ -520,7 +604,8 @@ class NetworkService {
                 await this.saveConnection(server.ip, server.port);
               }
             } catch (e) {
-              console.log(`Failed to verify Zeroconf server at ${server.ip}:${server.port}:`, e);
+              console.log(`Failed to verify Zeroconf server at ${server.ip}:${server.port}:`, 
+                e instanceof Error ? e.message : 'Unknown error');
             }
           }
           
@@ -535,7 +620,8 @@ class NetworkService {
           this.isScanning = false;
           return { success: false, reason: 'Scan aborted by user' };
         }
-        console.log('Zeroconf discovery failed:', error.message);
+        console.log('Zeroconf discovery failed:', 
+          error instanceof Error ? error.message : 'Unknown error');
       }
     }
     // Get network information
@@ -728,8 +814,24 @@ class NetworkService {
   
   // Use Zeroconf for mDNS/Bonjour discovery
   async discoverViaZeroconf(signal) {
-    if (!Zeroconf) {
-      console.log('Zeroconf not available for discovery');
+    // Check location permissions first (required for Android mDNS discovery)
+    let hasPermission = true;
+    
+    if (Platform.OS === 'android') {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          console.log('Location permission not granted - required for mDNS');
+          hasPermission = false;
+        }
+      } catch (error) {
+        console.log('Error checking location permission:', error);
+        hasPermission = false;
+      }
+    }
+    
+    if (!hasPermission) {
+      console.log('Cannot use Zeroconf without location permissions on Android');
       return [];
     }
     
@@ -751,26 +853,38 @@ class NetworkService {
           // Look for Picture Frame servers (could be identified by service name or other properties)
           // Adjust this to match how your server is actually advertised
           if (service.name.toLowerCase().includes('pictureframe') || 
-              service.txt?.type === 'pictureframe' ||
+              (service.txt && service.txt.type === 'pictureframe') ||
               service.name.toLowerCase().includes('frame')) {
-            // Use the first IP address (usually IPv4)
-            results.push({
-              ip: service.addresses[0],
-              port: service.port,
-              name: service.name
-            });
+            
+            // Make sure we have addresses
+            if (service.addresses && service.addresses.length > 0) {
+              // Use the first IP address (usually IPv4)
+              results.push({
+                ip: service.addresses[0],
+                port: service.port,
+                name: service.name
+              });
+            }
           }
+        });
+        
+        // Removed event listeners on error
+        zeroconf.on('error', error => {
+          console.log('Zeroconf error:', error);
         });
         
         // Start scanning for HTTP services
         zeroconf.scan('_http._tcp.', 'local.');
+        
+        // Also scan for custom service type if your frame advertises one
+        zeroconf.scan('_pictureframe._tcp.', 'local.');
         
         // Set a timeout for discovery
         setTimeout(() => {
           zeroconf.stop();
           console.log('Zeroconf discovery complete. Found:', results);
           resolve(results);
-        }, 5000);
+        }, 8000); // Increased timeout for better discovery chance
       } catch (error) {
         console.log('Error in Zeroconf discovery:', error);
         resolve([]);
@@ -783,43 +897,54 @@ class NetworkService {
     try {
       console.log('Getting network info for scanning...');
       
-      // Try to get network info dynamically if possible
+      // Check location permissions first (required for accessing WiFi info on Android)
+      if (Platform.OS === 'android') {
+        try {
+          const { status } = await Location.getForegroundPermissionsAsync();
+          if (status !== 'granted') {
+            console.log('Location permission not granted - required for network info');
+            // Continue anyway, we'll use fallback
+          }
+        } catch (error) {
+          console.log('Error checking location permission:', error);
+          // Continue anyway, we'll use fallback
+        }
+      }
+      
+      // Get network info
       try {
-        // Dynamic import for NetInfo to avoid requiring the dependency
-        const NetInfo = await import('@react-native-community/netinfo').catch(() => null);
-        if (NetInfo) {
-          const netInfo = await NetInfo.default.fetch();
-          console.log('Network info:', JSON.stringify(netInfo, null, 2));
+        const netInfo = await NetInfo.fetch();
+        console.log('Network info:', JSON.stringify(netInfo, null, 2));
+        
+        if (netInfo.type === 'wifi' && netInfo.details && netInfo.details.ipAddress) {
+          console.log('Found device IP:', netInfo.details.ipAddress);
           
-          if (netInfo.type === 'wifi' && netInfo.details && netInfo.details.ipAddress) {
-            console.log('Found device IP:', netInfo.details.ipAddress);
-            
-            // Validate IP address format before using it
-            if (this.isValidIpAddress(netInfo.details.ipAddress)) {
-              // Calculate subnet if netInfo provides subnet information
-              let subnet = null;
-              if (netInfo.details.subnet) {
-                subnet = netInfo.details.subnet;
-              } else {
-                // Extract first two octets as subnet
-                const ipParts = netInfo.details.ipAddress.split('.');
-                if (ipParts.length === 4) {
-                  subnet = `${ipParts[0]}.${ipParts[1]}`;
-                }
-              }
-              
-              return {
-                success: true,
-                ipAddress: netInfo.details.ipAddress,
-                subnet
-              };
+          // Validate IP address format before using it
+          if (this.isValidIpAddress(netInfo.details.ipAddress)) {
+            // Calculate subnet if netInfo provides subnet information
+            let subnet = null;
+            if (netInfo.details.subnet) {
+              subnet = netInfo.details.subnet;
             } else {
-              console.log('Invalid IP address format from NetInfo:', netInfo.details.ipAddress);
+              // Extract first two octets as subnet
+              const ipParts = netInfo.details.ipAddress.split('.');
+              if (ipParts.length === 4) {
+                subnet = `${ipParts[0]}.${ipParts[1]}`;
+              }
             }
+            
+            return {
+              success: true,
+              ipAddress: netInfo.details.ipAddress,
+              subnet
+            };
+          } else {
+            console.log('Invalid IP address format from NetInfo:', netInfo.details.ipAddress);
           }
         }
       } catch (netInfoError) {
-        console.log('Error getting network info:', netInfoError.message);
+        console.log('Error getting network info:', 
+          netInfoError instanceof Error ? netInfoError.message : 'Unknown error');
       }
       
       // Fallback to common networks
@@ -830,8 +955,9 @@ class NetworkService {
         subnet: '192.168.1' 
       };
     } catch (error) {
-      console.error('Error getting network info:', error);
-      return { success: false, reason: error.message };
+      console.error('Error getting network info:', 
+        error instanceof Error ? error.message : 'Unknown error');
+      return { success: false, reason: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 
@@ -899,41 +1025,83 @@ class NetworkService {
         isWifi: false,
         ipAddress: null,
         wifiName: null,
-        internetAccess: false
+        internetAccess: false,
+        locationPermission: 'unknown',
+        hasNetInfo: true
       };
+
+      // Check location permissions
+      if (Platform.OS === 'android') {
+        try {
+          const { status: permStatus } = await Location.getForegroundPermissionsAsync();
+          status.locationPermission = permStatus;
+        } catch (error) {
+          console.log('Error checking location permission:', 
+            error instanceof Error ? error.message : 'Unknown error');
+          status.locationPermission = 'error';
+        }
+      }
 
       // Check basic connectivity
       try {
-        // Dynamic import to avoid requiring the dependency
-        const NetInfo = await import('@react-native-community/netinfo').catch(() => null);
-        if (NetInfo) {
-          const netInfo = await NetInfo.default.fetch();
+        const netInfo = await NetInfo.fetch();
 
-          status.isConnected = netInfo.isConnected;
-          status.isWifi = netInfo.type === 'wifi';
-          status.ipAddress = netInfo.details?.ipAddress;
-          status.wifiName = netInfo.details?.ssid;
+        status.isConnected = !!netInfo.isConnected;
+        status.isWifi = netInfo.type === 'wifi';
+        status.ipAddress = netInfo.details?.ipAddress || null;
+        status.wifiName = netInfo.details?.ssid || null;
 
-          console.log('Network status:', netInfo);
-        }
-      } catch (_e) {
-        console.log('Error checking network status:', _e);
+        console.log('Network status:', netInfo);
+      } catch (error) {
+        console.log('Error checking network status:', 
+          error instanceof Error ? error.message : 'Unknown error');
+        status.hasNetInfo = false;
       }
 
       // Check internet access
       try {
-        await fetch('https://www.google.com', {
-          method: 'HEAD',
-          timeout: 5000
-        });
-        status.internetAccess = true;
-      } catch (_e) {
+        // Check if we're in development mode or on a web platform
+        const isDev = __DEV__ || Platform.OS === 'web';
+        
+        if (isDev) {
+          // In development mode, assume internet connection is available
+          // This avoids CORS issues during development
+          console.log('Development mode detected, skipping internet connectivity check');
+          status.internetAccess = true;
+          status.connectivityCheckSkipped = true;
+        } else {
+          // In production, we can use these connectivity check endpoints
+          try {
+            // Try native NetInfo first if available
+            if (NetInfo.fetch) {
+              const netInfoState = await NetInfo.fetch();
+              status.internetAccess = netInfoState.isInternetReachable === true;
+              console.log('NetInfo internet reachable:', status.internetAccess);
+            } else {
+              // Fallback to a fetch check on an endpoint that typically doesn't have CORS issues
+              await fetch('https://clients3.google.com/generate_204', {
+                method: 'HEAD',
+                timeout: 3000,
+                cache: 'no-cache',
+              });
+              status.internetAccess = true;
+            }
+          } catch (error) {
+            console.log('Internet connectivity check failed:', 
+              error instanceof Error ? error.message : 'Unknown error');
+            status.internetAccess = false;
+          }
+        }
+      } catch (error) {
+        console.log('Error in connectivity check:', 
+          error instanceof Error ? error.message : 'Unknown error');
         status.internetAccess = false;
       }
 
       return status;
     } catch (error) {
-      console.error('Error in network status check:', error);
+      console.error('Error in network status check:', 
+        error instanceof Error ? error.message : 'Unknown error');
       return null;
     }
   }

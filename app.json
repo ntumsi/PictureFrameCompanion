@@ -35,7 +35,8 @@
         "android.permission.ACCESS_COARSE_LOCATION"
       ],
       "config": {
-        "usesNonExemptEncryption": false
+        "usesNonExemptEncryption": false,
+        "usesCleartextTraffic": true
       },
       "intentFilters": [
         {
@@ -47,7 +48,10 @@
         }
       ],
       "edgeToEdgeEnabled": true,
-      "package": "com.ntumsi.pictureframeconpanion"
+      "package": "com.ntumsi.pictureframeconpanion",
+      "networkSecurityConfig": {
+        "cleartextTrafficPermitted": true
+      }
     },
     "web": {
       "bundler": "metro",
