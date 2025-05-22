@@ -266,19 +266,39 @@ import React, { useState, useEffect } from 'react';
 
       setIsScanning(true);
       setError('');
+      
+      // Validate IP format
+      const ipPattern = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+      if (!ipPattern.test(manualIp)) {
+        setError('Please enter a valid IP address (e.g., 192.168.1.100)');
+        setIsScanning(false);
+        return;
+      }
+      
+      // Parse port
+      const port = parseInt(manualPort) || 5000;
+      if (port < 1 || port > 65535) {
+        setError('Please enter a valid port number (1-65535)');
+        setIsScanning(false);
+        return;
+      }
 
+      console.log(`Attempting manual connection to ${manualIp}:${port}...`);
+      
       try {
-        const result = await NetworkService.checkServer(manualIp, parseInt(manualPort) ||
-  5000);
+        const result = await NetworkService.checkServer(manualIp, port);
 
         if (result.success) {
-          await NetworkService.saveConnection(manualIp, parseInt(manualPort) || 5000);
-          Alert.alert('Success', `Connected to server at ${manualIp}:${manualPort}`);
+          console.log(`Successfully connected to server at ${manualIp}:${port}`);
+          await NetworkService.saveConnection(manualIp, port);
+          Alert.alert('Success', `Connected to server at ${manualIp}:${port}`);
           router.navigate('/');  // Fixed to use consistent navigation path
         } else {
+          console.log(`Connection failed: ${result.reason}`);
           setError(`Could not connect: ${result.reason}`);
         }
       } catch (err) {
+        console.error('Error during manual connection:', err);
         setError(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
       } finally {
         setIsScanning(false);

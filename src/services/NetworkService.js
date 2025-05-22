@@ -427,10 +427,16 @@ class NetworkService {
       }
       
       console.log(`Checking server at ${ip}:${port}`);
+      
+      // Add explicit timeout and error handling for better diagnostics
+      const url = `http://${ip}:${port}/api/images`;
+      console.log(`Making request to: ${url}`);
+      
       // Attempt to call the images API endpoint
-      const response = await axios.get(`http://${ip}:${port}/api/images`, {
+      const response = await axios.get(url, {
         timeout: timeout, // Configurable timeout
         headers: {
+          'Accept': 'application/json',
           'Cache-Control': 'no-cache', // Prevent caching
           'Pragma': 'no-cache'
         }
@@ -542,19 +548,39 @@ class NetworkService {
     // Check for permissions first (required for Android)
     if (Platform.OS === 'android' && !skipPermissionCheck) {
       try {
+        console.log('Checking Android location permissions for network scanning...');
         const { status } = await Location.getForegroundPermissionsAsync();
+        console.log('Location permission status:', status);
+        
         if (status !== 'granted') {
           console.log('WARNING: Location permission not granted - network scan may fail');
           // Try to request the permission
-          const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
-          if (newStatus !== 'granted') {
-            console.log('Location permission denied - cannot scan network properly');
+          try {
+            console.log('Requesting location permission...');
+            const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+            console.log('New location permission status:', newStatus);
+            
+            if (newStatus !== 'granted') {
+              console.log('Location permission denied - cannot scan network properly');
+              return { 
+                success: false, 
+                reason: 'Location permission required for network scanning on Android', 
+                permissionDenied: true
+              };
+            } else {
+              console.log('Location permission granted successfully');
+            }
+          } catch (requestError) {
+            console.log('Error requesting location permission:', 
+              requestError instanceof Error ? requestError.message : 'Unknown error');
             return { 
               success: false, 
-              reason: 'Location permission required for network scanning on Android', 
+              reason: 'Error requesting location permission', 
               permissionDenied: true
             };
           }
+        } else {
+          console.log('Location permission already granted');
         }
       } catch (error) {
         console.log('Error checking location permission:', 
@@ -814,6 +840,8 @@ class NetworkService {
   
   // Use Zeroconf for mDNS/Bonjour discovery
   async discoverViaZeroconf(signal) {
+    console.log('Starting Zeroconf/mDNS discovery...');
+    
     // Check location permissions first (required for Android mDNS discovery)
     let hasPermission = true;
     
@@ -822,10 +850,20 @@ class NetworkService {
         const { status } = await Location.getForegroundPermissionsAsync();
         if (status !== 'granted') {
           console.log('Location permission not granted - required for mDNS');
-          hasPermission = false;
+          // Try to request it directly
+          const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+          if (newStatus !== 'granted') {
+            console.log('Location permission request denied');
+            hasPermission = false;
+          } else {
+            console.log('Location permission granted after request');
+          }
+        } else {
+          console.log('Location permission already granted');
         }
       } catch (error) {
-        console.log('Error checking location permission:', error);
+        console.log('Error checking location permission:', 
+          error instanceof Error ? error.message : 'Unknown error');
         hasPermission = false;
       }
     }
@@ -835,14 +873,23 @@ class NetworkService {
       return [];
     }
     
+    // Verify Zeroconf is properly initialized
+    if (!Zeroconf) {
+      console.log('Zeroconf is not available - module may not be properly linked');
+      return [];
+    }
+    
     return new Promise((resolve, reject) => {
       try {
         const results = [];
+        console.log('Creating Zeroconf instance...');
         const zeroconf = new Zeroconf();
+        console.log('Zeroconf instance created successfully');
         
         // Check if the scan was aborted
         if (signal) {
           signal.addEventListener('abort', () => {
+            console.log('Zeroconf scan aborted by signal');
             zeroconf.stop();
             reject(new Error('Scan aborted'));
           });
