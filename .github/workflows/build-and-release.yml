@@ -1,0 +1,55 @@
+name: Build & Release Android APK
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set up EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build APK
+        run: eas build --platform android --profile production --non-interactive --local --output ./PictureFrameCompanion.apk
+
+      - name: Extract version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: PictureFrameCompanion ${{ steps.version.outputs.VERSION }}
+          body: |
+            ## PictureFrameCompanion ${{ steps.version.outputs.VERSION }}
+
+            ### Installation
+            1. Download the APK file below
+            2. On your Android device, enable **Install from unknown sources** if prompted
+            3. Open the downloaded APK to install
+
+            ### What's new
+            See [commit history](https://github.com/${{ github.repository }}/commits/${{ steps.version.outputs.VERSION }}) for changes.
+          files: ./PictureFrameCompanion.apk
+          draft: false
+          prerelease: false

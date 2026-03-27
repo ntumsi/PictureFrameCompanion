@@ -81,7 +81,10 @@ module.exports = {
         savePhotosPermission: "Allow $(PRODUCT_NAME) to save photos to your photo library.",
         isAccessMediaLocationEnabled: true
       }
-    ]
+    ],
+    "expo-font",
+    "expo-secure-store",
+    "expo-web-browser"
   ],
   experiments: {
     typedRoutes: true
