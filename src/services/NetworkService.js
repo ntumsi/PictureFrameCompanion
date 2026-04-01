@@ -152,25 +152,66 @@ class NetworkService {
       }
 
       const netInfo = await NetInfo.fetch();
+      console.log('NetInfo result:', JSON.stringify(netInfo));
 
-      if (netInfo.type === 'wifi' && netInfo.details?.ipAddress) {
-        const ip = netInfo.details.ipAddress;
-        if (this.isValidIpAddress(ip)) {
-          const parts = ip.split('.');
-          // Always return a proper /24 subnet (first 3 octets)
-          return {
-            success: true,
-            ipAddress: ip,
-            subnet: `${parts[0]}.${parts[1]}.${parts[2]}`,
-            gateway: netInfo.details.gateway || `${parts[0]}.${parts[1]}.${parts[2]}.1`,
-          };
-        }
+      // Check for IP in details regardless of connection type
+      // Some devices/routers report type differently (e.g. 'other' instead of 'wifi')
+      const ip = netInfo.details?.ipAddress;
+      if (ip && this.isValidIpAddress(ip)) {
+        const parts = ip.split('.');
+        return {
+          success: true,
+          ipAddress: ip,
+          subnet: `${parts[0]}.${parts[1]}.${parts[2]}`,
+          gateway: netInfo.details.gateway || `${parts[0]}.${parts[1]}.${parts[2]}.1`,
+        };
       }
     } catch (error) {
       console.log('NetInfo error:', error?.message);
     }
 
-    // Fallback
+    // Fallback: try to discover our subnet by probing common gateways
+    console.log('NetInfo did not return an IP, trying gateway probes...');
+    const gatewayProbes = [
+      '192.168.86.1',  // Google Wifi / Nest
+      '192.168.1.1',   // Most common
+      '192.168.0.1',   // Common alternative
+      '10.0.0.1',      // Some ISPs
+      '192.168.2.1',   // Some routers
+      '192.168.10.1',  // Some business routers
+      '172.16.0.1',    // Private range
+    ];
+
+    for (const gw of gatewayProbes) {
+      try {
+        await axios.get(`http://${gw}`, { timeout: 800 });
+        // If we get any response (even an error page), this gateway exists
+        const parts = gw.split('.');
+        console.log(`Gateway probe hit: ${gw}`);
+        return {
+          success: true,
+          ipAddress: gw,
+          subnet: `${parts[0]}.${parts[1]}.${parts[2]}`,
+          gateway: gw,
+        };
+      } catch (error) {
+        // ECONNREFUSED means something is there, just not serving HTTP
+        if (error?.code === 'ECONNREFUSED') {
+          const parts = gw.split('.');
+          console.log(`Gateway probe refused but reachable: ${gw}`);
+          return {
+            success: true,
+            ipAddress: gw,
+            subnet: `${parts[0]}.${parts[1]}.${parts[2]}`,
+            gateway: gw,
+          };
+        }
+        // Timeout or unreachable — try next
+      }
+    }
+
+    // Last resort fallback
+    console.log('All gateway probes failed, using default 192.168.1');
     return {
       success: true,
       ipAddress: '192.168.1.100',
@@ -404,7 +445,15 @@ class NetworkService {
     }
 
     // Priority 3: Common fallback subnets (only high-probability IPs)
-    const fallbackSubnets = ['192.168.1', '192.168.0', '10.0.0', '10.0.1'];
+    const fallbackSubnets = [
+      '192.168.86',  // Google Wifi / Nest
+      '192.168.1',   // Most common
+      '192.168.0',   // Common alternative
+      '192.168.2',   // Some routers
+      '192.168.10',  // Business routers
+      '10.0.0',      // Some ISPs
+      '10.0.1',      // Apple / some ISPs
+    ];
     for (const fb of fallbackSubnets) {
       if (fb === subnet) continue;
       for (const last of priorityOctets) {
