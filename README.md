@@ -9,9 +9,9 @@ A mobile companion app for controlling and managing your Picture Frame server. T
 
 ## Download
 
-[![Download APK](https://img.shields.io/badge/Download-APK-brightgreen?style=for-the-badge&logo=android)](https://expo.dev/artifacts/eas/qmVJwPqTJoVgNaJ6zG884A.apk)
+[![Download APK](https://img.shields.io/badge/Download-APK-brightgreen?style=for-the-badge&logo=android)](https://github.com/ntumsi/PictureFrameCompanion/releases/latest)
 
-[Direct APK Link](https://expo.dev/artifacts/eas/qmVJwPqTJoVgNaJ6zG884A.apk)
+[Latest Release](https://github.com/ntumsi/PictureFrameCompanion/releases/latest)
 
 ### Installation Instructions
 
@@ -80,26 +80,32 @@ In the output, you'll find options to open the app in a
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
-## Get a fresh project
+## Building & Releasing
 
-When you're ready, run:
+Releases are automated via GitHub Actions. Pushing a version tag triggers a production APK build and creates a GitHub Release with the APK attached.
+
+### Create a new release
 
 ```bash
-npm run reset-project
+git tag v1.1.0
+git push origin v1.1.0
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### Retrigger a release build (same version)
+
+```bash
+git push origin :refs/tags/v1.0.0   # delete remote tag
+git tag -d v1.0.0                    # delete local tag
+git tag v1.0.0                       # re-create tag
+git push origin v1.0.0               # push to trigger build
+```
+
+### Prerequisites
+
+- An `EXPO_TOKEN` repository secret must be configured in GitHub (Settings > Secrets and variables > Actions)
+- Workflow permissions must be set to **Read and write** (Settings > Actions > General > Workflow permissions)
 
 ## Learn more
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- [Expo documentation](https://docs.expo.dev/)
+- [Expo Router (file-based routing)](https://docs.expo.dev/router/introduction)

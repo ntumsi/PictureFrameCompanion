@@ -597,6 +597,14 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
     url: string;
     fullUrl?: string;
     path?: string;
+    album?: string;
+  }
+
+  interface Album {
+    id: string;
+    name: string;
+    imageCount: number;
+    isActive: boolean;
   }
 
   export default function UploadScreen() {
@@ -605,6 +613,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
     const [uploading, setUploading] = useState(false);
     const [serverInfo] = useState<ServerInfo | null>(NetworkService.connectedServer);
     const [serverImages, setServerImages] = useState<ServerImage[]>([]);
+    const [albums, setAlbums] = useState<Album[]>([]);
+    const [selectedAlbum, setSelectedAlbum] = useState('default');
     const router = useRouter();
     const { imageUri } = useLocalSearchParams<{ imageUri?: string }>();
     const initialFetchDone = useRef(false);
@@ -621,6 +631,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
       } else if (!initialFetchDone.current) {
         // Only fetch on first load
         fetchServerImages();
+        fetchAlbums();
         initialFetchDone.current = true;
       }
     }, [router]);
@@ -654,6 +665,21 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
         }
       } catch (error) {
         console.error('Failed to fetch server images:', error);
+      }
+    };
+
+    // Fetch albums from server
+    const fetchAlbums = async () => {
+      if (!NetworkService.connectedServer) return;
+      const { ip, port } = NetworkService.connectedServer;
+      try {
+        const response = await axios.get<Album[]>(`http://${ip}:${port}/api/albums`);
+        const albumList = response.data || [];
+        setAlbums(albumList);
+        console.log(`Fetched ${albumList.length} albums from server`);
+      } catch (error) {
+        console.log('Server may not support albums, using default');
+        setAlbums([{ id: 'default', name: 'All Photos', imageCount: 0, isActive: true }]);
       }
     };
 
@@ -826,6 +852,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
           type: image.type,
           name: image.name,
         } as any); // Type assertion to work around React Native FormData types
+        formData.append('album', selectedAlbum);
 
         // Upload with axios
         const response = await axios.post(uploadUrl, formData, {
@@ -998,6 +1025,37 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
           </Text>
         ) : (
           <Text style={styles.errorText}>Not connected to a server</Text>
+        )}
+
+        {albums.length > 0 && (
+          <View style={styles.albumSection}>
+            <Text style={[styles.albumLabel, isDark && styles.textLight]}>Upload to album:</Text>
+            <FlatList
+              data={albums}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[
+                    styles.albumChip,
+                    isDark && styles.albumChipDark,
+                    selectedAlbum === item.id && styles.albumChipActive,
+                  ]}
+                  onPress={() => setSelectedAlbum(item.id)}
+                >
+                  <Text style={[
+                    styles.albumChipText,
+                    isDark && styles.textLight,
+                    selectedAlbum === item.id && styles.albumChipTextActive,
+                  ]}>
+                    {item.name} ({item.imageCount})
+                  </Text>
+                </TouchableOpacity>
+              )}
+              style={styles.albumList}
+            />
+          </View>
         )}
 
         <View style={styles.buttonContainer}>
@@ -1212,5 +1270,43 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
       color: 'white',
       fontSize: 16,
       fontWeight: 'bold',
+    },
+    albumSection: {
+      marginTop: 16,
+      marginBottom: 4,
+    },
+    albumLabel: {
+      fontSize: 14,
+      fontWeight: '600',
+      marginBottom: 8,
+      color: '#333',
+    },
+    albumList: {
+      flexGrow: 0,
+    },
+    albumChip: {
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      borderRadius: 20,
+      borderWidth: 1.5,
+      borderColor: '#ddd',
+      backgroundColor: 'white',
+      marginRight: 8,
+    },
+    albumChipDark: {
+      backgroundColor: '#1a1a1a',
+      borderColor: '#444',
+    },
+    albumChipActive: {
+      borderColor: '#007bff',
+      backgroundColor: '#e8f0fe',
+    },
+    albumChipText: {
+      fontSize: 13,
+      color: '#555',
+    },
+    albumChipTextActive: {
+      color: '#007bff',
+      fontWeight: '600',
     },
   });

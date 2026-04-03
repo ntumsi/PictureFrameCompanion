@@ -310,6 +310,7 @@
     url: string;
     fullUrl: string;
     path: string;
+    album?: string;
     selected?: boolean; // For multi-select deletion
   }
 
@@ -318,15 +319,23 @@
     port: number;
   }
 
+  interface Album {
+    id: string;
+    name: string;
+    imageCount: number;
+    isActive: boolean;
+  }
+
   export default function GalleryScreen() {
     const { isDark } = useTheme();
     const [images, setImages] = useState<ImageItem[]>([]);
+    const [albums, setAlbums] = useState<Album[]>([]);
+    const [activeAlbum, setActiveAlbum] = useState<string>('all');
     const [refreshing, setRefreshing] = useState(false);
     const [serverInfo] = useState<ServerInfo | null>(NetworkService.connectedServer);
     const [isDeleting, setIsDeleting] = useState(false);
     const [selectedImages, setSelectedImages] = useState<string[]>([]); // IDs of selected images
     const [selectMode, setSelectMode] = useState(false);
-    // const [hasChanges, setHasChanges] = useState(false);
     const router = useRouter();
     const screenWidth = Dimensions.get('window').width;
     const imageSize = (screenWidth - 40) / 2; // 2 images per row with some padding
@@ -347,6 +356,7 @@
             );
           } else {
             console.log('Gallery - Connection available, loading images');
+            fetchAlbums();
             loadImages();
           }
         } catch (error) {
@@ -362,17 +372,31 @@
       checkConnectionAndLoadImages();
     }, [router]);
 
-    // Load images from server
-    const loadImages = async () => {
+    // Fetch albums from server
+    const fetchAlbums = async () => {
+      if (!NetworkService.connectedServer) return;
+      const { ip, port } = NetworkService.connectedServer;
+      try {
+        const response = await axios.get<Album[]>(`http://${ip}:${port}/api/albums`);
+        setAlbums(response.data || []);
+      } catch (error) {
+        console.log('Server may not support albums');
+        setAlbums([]);
+      }
+    };
+
+    // Load images from server (optionally filtered by album)
+    const loadImages = async (album?: string) => {
       if (!NetworkService.connectedServer) return;
 
       setRefreshing(true);
       const { ip, port } = NetworkService.connectedServer;
+      const albumFilter = album ?? activeAlbum;
 
       try {
-        const response = await axios.get<ImageItem[]>(`http://${ip}:${port}/api/images`);
+        const params = albumFilter && albumFilter !== 'all' ? `?album=${albumFilter}` : '';
+        const response = await axios.get<ImageItem[]>(`http://${ip}:${port}/api/images${params}`);
         const sortedImages = (response.data || []).sort((a, b) => {
-          // Sort by name (basic chronological if using UUID-based filenames)
           return a.name.localeCompare(b.name);
         });
 
@@ -391,6 +415,12 @@
       } finally {
         setRefreshing(false);
       }
+    };
+
+    // Switch album filter
+    const switchAlbum = (albumId: string) => {
+      setActiveAlbum(albumId);
+      loadImages(albumId);
     };
 
     // Toggle select mode
@@ -456,7 +486,9 @@
         // Process deletions one by one
         for (const imageId of selectedImages) {
           try {
-            await axios.delete(`http://${ip}:${port}/api/images/${imageId}`);
+            const img = images.find(i => i.id === imageId);
+            const albumParam = img?.album ? `?album=${img.album}` : '';
+            await axios.delete(`http://${ip}:${port}/api/images/${imageId}${albumParam}`);
             deletedIds.push(imageId);
             results.success++;
           } catch (error) {
@@ -474,6 +506,9 @@
         // Reset selection mode and selections
         setSelectedImages([]);
         setSelectMode(false);
+
+        // Refresh album counts
+        fetchAlbums();
 
         // Show result message
         if (results.failure > 0) {
@@ -605,6 +640,35 @@
             </Text>
           )}
         </View>
+
+        {albums.length > 0 && (
+          <FlatList
+            data={[{ id: 'all', name: 'All', imageCount: 0, isActive: false }, ...albums]}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[
+                  styles.albumTab,
+                  isDark && styles.albumTabDark,
+                  activeAlbum === item.id && styles.albumTabActive,
+                ]}
+                onPress={() => switchAlbum(item.id)}
+              >
+                <Text style={[
+                  styles.albumTabText,
+                  isDark && styles.textLight,
+                  activeAlbum === item.id && styles.albumTabTextActive,
+                ]}>
+                  {item.name}
+                </Text>
+              </TouchableOpacity>
+            )}
+            style={styles.albumTabBar}
+            contentContainerStyle={styles.albumTabBarContent}
+          />
+        )}
 
         {isDeleting && (
           <View style={styles.loadingOverlay}>
@@ -804,5 +868,38 @@
       color: 'white',
       marginTop: 10,
       fontSize: 18,
+    },
+    albumTabBar: {
+      flexGrow: 0,
+      maxHeight: 44,
+    },
+    albumTabBarContent: {
+      paddingHorizontal: 15,
+      paddingVertical: 6,
+    },
+    albumTab: {
+      paddingVertical: 6,
+      paddingHorizontal: 14,
+      borderRadius: 18,
+      borderWidth: 1.5,
+      borderColor: '#ddd',
+      backgroundColor: 'white',
+      marginRight: 8,
+    },
+    albumTabDark: {
+      backgroundColor: '#1a1a1a',
+      borderColor: '#444',
+    },
+    albumTabActive: {
+      borderColor: '#007bff',
+      backgroundColor: '#e8f0fe',
+    },
+    albumTabText: {
+      fontSize: 13,
+      color: '#555',
+    },
+    albumTabTextActive: {
+      color: '#007bff',
+      fontWeight: '600',
     },
   });
