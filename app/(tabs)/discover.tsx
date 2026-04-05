@@ -82,7 +82,7 @@ import React, { useState, useEffect } from 'react';
       
       // Validate IP format
       const ipPattern = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
-      if (!ipPattern.test(manualIp)) {
+      if (!ipPattern.test(trimmedIp)) {
         setError('Please enter a valid IP address (e.g., 192.168.1.100)');
         setIsScanning(false);
         return;
@@ -96,15 +96,16 @@ import React, { useState, useEffect } from 'react';
         return;
       }
 
-      console.log(`Attempting manual connection to ${manualIp}:${port}...`);
-      
+      const trimmedIp = manualIp.trim();
+      console.log(`Attempting manual connection to ${trimmedIp}:${port}...`);
+
       try {
-        const result = await NetworkService.checkServer(manualIp, port);
+        const result = await NetworkService.checkServer(trimmedIp, port);
 
         if (result.success) {
-          console.log(`Successfully connected to server at ${manualIp}:${port}`);
-          await NetworkService.saveConnection(manualIp, port);
-          Alert.alert('Success', `Connected to server at ${manualIp}:${port}`);
+          console.log(`Successfully connected to server at ${trimmedIp}:${port}`);
+          await NetworkService.saveConnection(trimmedIp, port);
+          Alert.alert('Success', `Connected to server at ${trimmedIp}:${port}`);
           router.navigate('/');  // Fixed to use consistent navigation path
         } else {
           console.log(`Connection failed: ${result.reason}`);

@@ -47,10 +47,6 @@ module.exports = {
     ],
     edgeToEdgeEnabled: true,
     package: "com.ntumsi.pictureframeconpanion",
-    // Add this for HTTP cleartext traffic
-    config: {
-      usesCleartextTraffic: true
-    }
   },
   web: {
     bundler: "metro",
@@ -84,7 +80,15 @@ module.exports = {
     ],
     "expo-font",
     "expo-secure-store",
-    "expo-web-browser"
+    "expo-web-browser",
+    [
+      "expo-build-properties",
+      {
+        android: {
+          usesCleartextTraffic: true
+        }
+      }
+    ]
   ],
   experiments: {
     typedRoutes: true
