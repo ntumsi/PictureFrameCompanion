@@ -103,9 +103,10 @@
 //     },
 //   });
 
-  import { useState, useEffect } from 'react';
+  import { useState, useEffect, useCallback } from 'react';
   import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
   import { router } from 'expo-router';
+  import { useFocusEffect } from '@react-navigation/native';
   import { Ionicons } from '@expo/vector-icons';
   import NetworkService from '../../src/services/NetworkService';
   import { useTheme } from '../../src/context/ThemeContext';
@@ -121,31 +122,32 @@
     const [serverInfo, setServerInfo] = useState<ServerInfo |
   null>(NetworkService.connectedServer);
 
-    useEffect(() => {
-      // Check if we already have connection info and set up state
-      async function checkConnection() {
-        try {
-          // Force reload the saved connection
-          await NetworkService.loadSavedConnection();
-          
-          const server = NetworkService.connectedServer;
-          console.log('Home screen - Current connection state:', server);
-          
-          if (server) {
-            setIsConnected(true);
-            setServerInfo(server);
-          } else {
+    useFocusEffect(
+      useCallback(() => {
+        // Re-check connection every time this tab gains focus
+        async function checkConnection() {
+          try {
+            await NetworkService.loadSavedConnection();
+
+            const server = NetworkService.connectedServer;
+            console.log('Home screen - Current connection state:', server);
+
+            if (server) {
+              setIsConnected(true);
+              setServerInfo(server);
+            } else {
+              setIsConnected(false);
+              setServerInfo(null);
+            }
+          } catch (error) {
+            console.error('Error checking connection:', error);
             setIsConnected(false);
-            setServerInfo(null);
           }
-        } catch (error) {
-          console.error('Error checking connection:', error);
-          setIsConnected(false);
         }
-      }
-      
-      checkConnection();
-    }, []);
+
+        checkConnection();
+      }, [])
+    );
 
     return (
       <View style={[styles.container, isDark && styles.containerDark]}>

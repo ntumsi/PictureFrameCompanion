@@ -209,7 +209,8 @@ import React, { useState, useEffect } from 'react';
             onChangeText={setManualIp}
             placeholder="192.168.1.xxx"
             placeholderTextColor={isDark ? "#666" : "#999"}
-            keyboardType="numeric"
+            keyboardType="decimal-pad"
+            autoCorrect={false}
           />
         </View>
 
