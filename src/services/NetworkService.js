@@ -83,7 +83,7 @@ class NetworkService {
 
   // ─── Server Validation ──────────────────────────────────────────
 
-  async checkServer(ip, port = 5000, timeout = 2000) {
+  async checkServer(ip, port = 5000, timeout = 3000) {
     if (!this.isValidIpAddress(ip)) {
       return { success: false, reason: 'Invalid IP address format' };
     }
@@ -288,8 +288,8 @@ class NetworkService {
     if (this.isScanning) this.abortScan();
 
     const {
-      maxConcurrent = 30,
-      timeout = 1500,
+      maxConcurrent = 20,
+      timeout = 3000,
       useZeroconf = true,
       onProgress = null,
       ports = SCAN_PORTS,

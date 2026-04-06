@@ -79,7 +79,9 @@ import React, { useState, useEffect } from 'react';
 
       setIsScanning(true);
       setError('');
-      
+
+      const trimmedIp = manualIp.trim();
+
       // Validate IP format
       const ipPattern = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
       if (!ipPattern.test(trimmedIp)) {
@@ -87,7 +89,7 @@ import React, { useState, useEffect } from 'react';
         setIsScanning(false);
         return;
       }
-      
+
       // Parse port
       const port = parseInt(manualPort) || 5000;
       if (port < 1 || port > 65535) {
@@ -95,21 +97,27 @@ import React, { useState, useEffect } from 'react';
         setIsScanning(false);
         return;
       }
-
-      const trimmedIp = manualIp.trim();
       console.log(`Attempting manual connection to ${trimmedIp}:${port}...`);
 
       try {
-        const result = await NetworkService.checkServer(trimmedIp, port);
+        // Use a longer timeout (5s) for manual connections since the user
+        // explicitly provided the IP — mesh networks (e.g. Google Wifi) can be slow
+        const result = await NetworkService.checkServer(trimmedIp, port, 5000);
 
         if (result.success) {
           console.log(`Successfully connected to server at ${trimmedIp}:${port}`);
           await NetworkService.saveConnection(trimmedIp, port);
           Alert.alert('Success', `Connected to server at ${trimmedIp}:${port}`);
-          router.navigate('/');  // Fixed to use consistent navigation path
+          router.navigate('/');
         } else {
           console.log(`Connection failed: ${result.reason}`);
-          setError(`Could not connect: ${result.reason}`);
+          if (result.reason === 'Connection timeout') {
+            setError(`Connection timed out. Make sure the PictureFrame server is running at ${trimmedIp}:${port} and your phone is on the same WiFi network.`);
+          } else if (result.reason === 'Connection refused') {
+            setError(`Connection refused. The server at ${trimmedIp} is reachable but not listening on port ${port}.`);
+          } else {
+            setError(`Could not connect: ${result.reason}`);
+          }
         }
       } catch (err) {
         console.error('Error during manual connection:', err);
